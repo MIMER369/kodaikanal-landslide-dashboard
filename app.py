@@ -1,23 +1,20 @@
-import os
-import json                # Make sure json is imported
+import os, json
 import ee
+from ee import ServiceAccountCredentials
 import streamlit as st
-import numpy as np
-import folium
-from streamlit_folium import st_folium
-import rasterio
-from urllib import request
 
-st.set_page_config(layout="wide")
-st.title("📍 Kodaikanal Landslide Detection")
+# … st.set_page_config, st.title …
 
 # — Earth Engine Authentication via Secrets —
-# st.secrets["EE_CREDENTIALS_JSON"] is already a dict-like, so write it directly
+sa_info = st.secrets["EE_CREDENTIALS_JSON"]
 with open("/tmp/ee_key.json", "w") as f:
-    # Convert the AttrDict to a plain dict first
-    json.dump(dict(st.secrets["EE_CREDENTIALS_JSON"]), f)
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/ee_key.json"
-ee.Initialize()
+    json.dump(dict(sa_info), f)
+
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/content/landslide-demo-466508-922dd630cf91.json"
+
+# Service account credentials & Initialize
+credentials = ServiceAccountCredentials(sa_info["client_email"], "/content/landslide-demo-466508-922dd630cf91.json")
+ee.Initialize(credentials, project=sa_info["landslide-demo-466508"])
 
 # Define your region
 region = ee.Geometry.Rectangle([77.45, 10.22, 77.55, 10.32])
