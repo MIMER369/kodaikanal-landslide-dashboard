@@ -14,7 +14,8 @@ st.title("📍 Kodaikanal Landslide Detection")
 # — Earth Engine Authentication via Secrets —
 # st.secrets["EE_CREDENTIALS_JSON"] is already a dict-like, so write it directly
 with open("/tmp/ee_key.json", "w") as f:
-    json.dump(st.secrets["EE_CREDENTIALS_JSON"], f)
+    # Convert the AttrDict to a plain dict first
+    json.dump(dict(st.secrets["EE_CREDENTIALS_JSON"]), f)
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/ee_key.json"
 ee.Initialize()
 
