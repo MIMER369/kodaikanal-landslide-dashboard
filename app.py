@@ -1,5 +1,5 @@
 import os
-import json            # <— make sure json is imported
+import json                # Make sure json is imported
 import ee
 import streamlit as st
 import numpy as np
@@ -12,10 +12,9 @@ st.set_page_config(layout="wide")
 st.title("📍 Kodaikanal Landslide Detection")
 
 # — Earth Engine Authentication via Secrets —
-# st.secrets["EE_CREDENTIALS_JSON"] is already a dict, no json.loads
-creds = st.secrets["EE_CREDENTIALS_JSON"]
+# st.secrets["EE_CREDENTIALS_JSON"] is already a dict-like, so write it directly
 with open("/tmp/ee_key.json", "w") as f:
-    json.dump(creds, f)
+    json.dump(st.secrets["EE_CREDENTIALS_JSON"], f)
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/ee_key.json"
 ee.Initialize()
 
@@ -26,13 +25,13 @@ st.write("Click to fetch and display the latest precomputed landslide mask:")
 
 if st.button("Fetch & Display Mask"):
     st.info("Generating download URL from Earth Engine…")
-    # Replace with your actual asset ID if different
+    # Use your actual Earth Engine asset ID here
     mask_ee = ee.Image("users/your_username/mask_kodaikanal")
     url = mask_ee.getDownloadURL({
-        "region": region,
-        "scale": 30,
-        "crs": "EPSG:4326",
-        "fileFormat": "GeoTIFF"
+        "region":    region,
+        "scale":     30,
+        "crs":       "EPSG:4326",
+        "fileFormat":"GeoTIFF"
     })
 
     st.info("Downloading mask…")
@@ -40,11 +39,11 @@ if st.button("Fetch & Display Mask"):
     with open("/tmp/mask.tif", "wb") as f:
         f.write(resp.read())
 
-    # Load mask and convert to numpy array
+    # Read the GeoTIFF into a NumPy array
     with rasterio.open("/tmp/mask.tif") as src:
         mask_arr = src.read(1)
 
-    # Display on Folium map
+    # Display on a Folium map
     m = folium.Map(location=[10.27, 77.49], zoom_start=12)
     folium.TileLayer("Stamen Terrain").add_to(m)
     folium.raster_layers.ImageOverlay(
@@ -54,6 +53,4 @@ if st.button("Fetch & Display Mask"):
         name="Landslide Mask"
     ).add_to(m)
     st_folium(m, width=700, height=500)
-
-
 
