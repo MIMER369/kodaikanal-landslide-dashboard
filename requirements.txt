@@ -1,0 +1,12 @@
+numpy
+tensorflow
+earthengine-api
+pandas
+matplotlib
+imageio
+Pillow # PIL is now Pillow
+scikit-image # for skimage
+streamlit
+streamlit-folium
+pyngrok
+folium
