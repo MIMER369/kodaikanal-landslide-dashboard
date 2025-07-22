@@ -1,4 +1,4 @@
-import os, json
+import os, json, io, zipfile
 import ee
 from ee import ServiceAccountCredentials
 import streamlit as st
@@ -49,21 +49,37 @@ if st.button("Fetch & Display Mask"):
         st.error(f"❌ Failed to get download URL: {e}")
         st.stop()
 
-    # Download the GeoTIFF to a temp file
-    st.info("Downloading mask…")
+    # Download the content (likely a ZIP archive)
+    st.info("Downloading mask (may be zipped)…")
     try:
         resp = request.urlopen(url)
-    except Exception as e:
-        st.error(f"❌ HTTP error downloading mask: {e}")
-        st.stop()
-
-    tmp_path = "/tmp/mask.tif"
-    with open(tmp_path, "wb") as f:
         data = resp.read()
         if not data:
             st.error("❌ Download returned empty data.")
             st.stop()
-        f.write(data)
+    except Exception as e:
+        st.error(f"❌ HTTP error downloading mask: {e}")
+        st.stop()
+
+    # Extract GeoTIFF from ZIP (if zipped), else write directly
+    tmp_path = "/tmp/mask.tif"
+    try:
+        # Try to open as a zip
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            # Find the first TIFF in the archive
+            tif_name = next((n for n in zf.namelist() if n.endswith('.tif')), None)
+            if tif_name is None:
+                raise ValueError("No .tif found in ZIP archive.")
+            tif_data = zf.read(tif_name)
+            with open(tmp_path, "wb") as f:
+                f.write(tif_data)
+    except zipfile.BadZipFile:
+        # Not a zip, assume raw TIF
+        with open(tmp_path, "wb") as f:
+            f.write(data)
+    except Exception as e:
+        st.error(f"❌ Error extracting GeoTIFF: {e}")
+        st.stop()
 
     # Verify file size
     file_size = os.path.getsize(tmp_path)
@@ -89,4 +105,3 @@ if st.button("Fetch & Display Mask"):
         name="Landslide Mask"
     ).add_to(m)
     st_folium(m, width=700, height=500)
-
