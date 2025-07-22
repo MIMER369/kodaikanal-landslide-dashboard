@@ -10,7 +10,7 @@ from streamlit_folium import st_folium
 import matplotlib.pyplot as plt
 
 # -----------------------------------------
-# Page configuration
+# 1) Page configuration
 # -----------------------------------------
 st.set_page_config(
     page_title="Kodaikanal Landslide Dashboard",
@@ -19,13 +19,14 @@ st.set_page_config(
 st.title("📍 Kodaikanal Landslide Prediction Dashboard")
 
 # -----------------------------------------
-# Earth Engine Authentication (Streamlit Secrets)
+# 2) Earth Engine Authentication
 # -----------------------------------------
 sa_info = st.secrets.get("EE_CREDENTIALS_JSON", None)
 if sa_info is None:
     st.error("❌ Earth Engine credentials not found. Please set EE_CREDENTIALS_JSON in Streamlit secrets.")
     st.stop()
 
+# Write service account key to disk
 key_path = "/tmp/ee_key.json"
 with open(key_path, "w") as f:
     json.dump(dict(sa_info), f)
@@ -35,13 +36,13 @@ credentials = ServiceAccountCredentials(sa_info["client_email"], key_path)
 ee.Initialize(credentials, project=sa_info["project_id"])
 
 # -----------------------------------------
-# Define AOI (Kodaikanal bounds)
+# 3) Define AOI (Kodaikanal bounding box)
 # -----------------------------------------
 region_coords = [77.3, 10.1, 77.7, 10.4]
 region = ee.Geometry.Rectangle(region_coords)
 
 # -----------------------------------------
-# Cached EE computations
+# 4) Cached EE computations
 # -----------------------------------------
 @st.cache_data(show_spinner=False)
 def get_ndvi():
@@ -50,11 +51,14 @@ def get_ndvi():
           .filterBounds(region)
           .filterDate('2023-06-01', '2023-11-30')
     )
-    return col.map(lambda img: img.normalizedDifference(['SR_B5','SR_B4']).rename('NDVI')).median()
+    return col \
+        .map(lambda img: img.normalizedDifference(['SR_B5', 'SR_B4']).rename('NDVI')) \
+        .median()
 
 @st.cache_data(show_spinner=False)
 def get_slope():
-    return ee.Terrain.slope(ee.Image('USGS/SRTMGL1_003'))
+    dem = ee.Image('USGS/SRTMGL1_003')
+    return ee.Terrain.slope(dem)
 
 @st.cache_data(show_spinner=False)
 def get_mask():
@@ -68,25 +72,24 @@ def get_landslide_scars():
     return (
         ee.ImageCollection('COPERNICUS/S2')
           .filterBounds(region)
-          .filterDate('2023-01-01','2023-12-31')
+          .filterDate('2023-01-01', '2023-12-31')
           .median()
-          .normalizedDifference(['B8','B4'])
+          .normalizedDifference(['B8', 'B4'])
           .rename('LandslideScars')
     )
 
 @st.cache_data(show_spinner=False)
 def get_points():
-    pts_fc = (
+    pts = (
         get_mask()
         .addBands(ee.Image.pixelLonLat())
         .sample(region=region, scale=500, dropNulls=True)
-        .select(['latitude','longitude'])
+        .select(['latitude', 'longitude'])
         .limit(500)
     )
-    feats = pts_fc.getInfo()['features']
-    coords = [(f['properties']['latitude'], f['properties']['longitude'])
-              for f in feats]
-    return pd.DataFrame(coords, columns=['Latitude','Longitude'])
+    feats = pts.getInfo()['features']
+    coords = [(f['properties']['latitude'], f['properties']['longitude']) for f in feats]
+    return pd.DataFrame(coords, columns=['Latitude', 'Longitude'])
 
 @st.cache_data(show_spinner=False)
 def get_ndvi_histogram():
@@ -95,21 +98,22 @@ def get_ndvi_histogram():
 
 @st.cache_data(show_spinner=False)
 def get_hillshade():
-    return ee.Terrain.hillshade(ee.Image('USGS/SRTMGL1_003'))
+    dem = ee.Image('USGS/SRTMGL1_003')
+    return ee.Terrain.hillshade(dem)
 
 # -----------------------------------------
-# Visualization parameters
+# 5) Visualization parameters
 # -----------------------------------------
 vis_params = {
-    'NDVI':      {'min':0,'max':1,'palette':['white','green']},
-    'Slope':     {'min':0,'max':60},
-    'Mask':      {'palette':['#ff000080']},    # red @50% opacity
-    'Scars':     {'min':0,'max':1,'palette':['brown']},
-    'Hillshade': {'min':0,'max':255}           # grayscale hillshade
+    'NDVI':      {'min': 0,   'max': 1,   'palette': ['white', 'green']},
+    'Slope':     {'min': 0,   'max': 60},
+    'Mask':      {'palette': ['#ff000080']},   # red @50% opacity
+    'Scars':     {'min': 0,   'max': 1,   'palette': ['brown']},
+    'Hillshade': {'min': 0,   'max': 255}      # grayscale relief
 }
 
 # -----------------------------------------
-# Sidebar controls
+# 6) Sidebar controls
 # -----------------------------------------
 st.sidebar.header("Map Layers & Options")
 show_ndvi      = st.sidebar.checkbox("NDVI", value=False)
@@ -127,7 +131,7 @@ if st.sidebar.button("🔄 Refresh Data"):
     st.experimental_rerun()
 
 # -----------------------------------------
-# Helper to add EE layers
+# 7) Helper: add EE layers to Folium
 # -----------------------------------------
 def add_ee_layer(m, ee_img, vis, name, opacity=1.0):
     map_id = ee_img.getMapId(vis)
@@ -141,43 +145,58 @@ def add_ee_layer(m, ee_img, vis, name, opacity=1.0):
     ).add_to(m)
 
 # -----------------------------------------
-# Build Folium map
+# 8) Build the Folium map
 # -----------------------------------------
-m = folium.Map(location=[10.27,77.49], zoom_start=12, tiles=None)
+m = folium.Map(location=[10.27, 77.49], zoom_start=12, tiles=None)
 
-# Base layers
-folium.TileLayer("OpenStreetMap", name="OSM").add_to(m)
-folium.TileLayer("Stamen Terrain", name="Terrain").add_to(m)
-folium.TileLayer("Esri.WorldImagery", name="Satellite", control=True).add_to(m)
+# — Basemaps with proper attribution —
+folium.TileLayer(
+    tiles="OpenStreetMap",
+    name="OSM",
+    attr="© OpenStreetMap contributors"
+).add_to(m)
+folium.TileLayer(
+    tiles="Stamen Terrain",
+    name="Terrain",
+    attr="Map tiles by Stamen Design"
+).add_to(m)
+folium.TileLayer(
+    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attr="Esri, USGS, NOAA",
+    name="Satellite",
+    control=True
+).add_to(m)
 
-# EE overlays (hillshade first so other layers sit on top)
+# — EE overlays (hillshade first) —
 if show_hillshade:
-    add_ee_layer(m, get_hillshade(),    vis_params['Hillshade'], 'Hillshade',    opacity=0.5)
+    add_ee_layer(m, get_hillshade(), vis_params['Hillshade'], 'Hillshade', opacity=0.5)
 if show_ndvi:
-    add_ee_layer(m, get_ndvi(),         vis_params['NDVI'],      'NDVI')
+    add_ee_layer(m, get_ndvi(), vis_params['NDVI'], 'NDVI')
 if show_slope:
-    add_ee_layer(m, get_slope(),        vis_params['Slope'],     'Slope')
+    add_ee_layer(m, get_slope(), vis_params['Slope'], 'Slope')
 if show_mask:
-    add_ee_layer(m, get_mask(),         vis_params['Mask'],      'Landslide Mask')
+    add_ee_layer(m, get_mask(), vis_params['Mask'], 'Landslide Mask', opacity=1.0)
 if show_scars:
-    add_ee_layer(m, get_landslide_scars(), vis_params['Scars'],  'Landslide Scars')
+    add_ee_layer(m, get_landslide_scars(), vis_params['Scars'], 'Landslide Scars')
 
-# Optional point markers
+# — Optional point markers —
 points_df = None
 if show_points:
     points_df = get_points()
     for _, row in points_df.iterrows():
         folium.CircleMarker(
             location=[row.Latitude, row.Longitude],
-            radius=4, color='blue', fill=True
+            radius=4,
+            color='blue',
+            fill=True
         ).add_to(m)
 
 folium.LayerControl().add_to(m)
 
 # -----------------------------------------
-# Layout: map + side panel
+# 9) Layout: map + side panel
 # -----------------------------------------
-col1, col2 = st.columns((3,1))
+col1, col2 = st.columns((3, 1))
 with col1:
     st_folium(m, width=700, height=600)
 
