@@ -20,17 +20,20 @@ st.set_page_config(
 st.title("📍 Kodaikanal Landslide Prediction Dashboard")
 
 # -----------------------------------------
-# Earth Engine Authentication (Colab Drive)
+# Earth Engine Authentication (Streamlit Secrets)
 # -----------------------------------------
-drive_key_path = "/content/drive/MyDrive/landslide-demo-466508-922dd630cf91.json"
-if not os.path.exists(drive_key_path):
-    st.error(f"❌ EE key not found at {drive_key_path}. Please check the path.")
-    st.stop()
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = drive_key_path
+sa_info = st.secrets.get("EE_CREDENTIALS_JSON", None)
 
-with open(drive_key_path) as f:
-    sa_info = json.load(f)
-credentials = ServiceAccountCredentials(sa_info["client_email"], drive_key_path)
+if sa_info is None:
+    st.error("❌ Earth Engine credentials not found. Please set EE_CREDENTIALS_JSON in Streamlit secrets.")
+    st.stop()
+
+key_path = "/tmp/ee_key.json"
+with open(key_path, "w") as f:
+    json.dump(dict(sa_info), f)
+
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = key_path
+credentials = ServiceAccountCredentials(sa_info["client_email"], key_path)
 ee.Initialize(credentials, project=sa_info["project_id"])
 
 # -----------------------------------------
