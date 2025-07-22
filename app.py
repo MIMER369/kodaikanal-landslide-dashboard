@@ -9,13 +9,16 @@ import folium
 from streamlit_folium import st_folium
 import matplotlib.pyplot as plt
 
-# Try to import geemap (without hard dependency on foliumap submodule)
+# Try to import the folium‐based Map from geemap
 try:
-    import geemap
+    from geemap.foliumap import Map as GeemapMap
     HAVE_GEEMAP = True
 except ImportError:
     HAVE_GEEMAP = False
-    st.sidebar.warning("⚠️ geemap not found — Geemap tab will be hidden. Add `geemap>=0.23` to requirements.txt to re‑enable.")
+    st.sidebar.warning(
+        "⚠️ geemap.foliumap not found. "
+        "Install geemap>=0.23 in requirements.txt to enable the Geemap tab."
+    )
 
 # -----------------------------------------
 # 1) Page config & Title
@@ -39,21 +42,21 @@ creds = ServiceAccountCredentials(sa["client_email"], key_path)
 ee.Initialize(creds, project=sa["project_id"])
 
 # -----------------------------------------
-# 3) AOI
+# 3) Define AOI
 # -----------------------------------------
 region = ee.Geometry.Rectangle([77.3, 10.1, 77.7, 10.4])
 
 # -----------------------------------------
-# 4) EE functions (cached)
+# 4) EE computations (cached)
 # -----------------------------------------
 @st.cache_data
 def get_ndvi():
     col = (
         ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
           .filterBounds(region)
-          .filterDate("2023-06-01","2023-11-30")
+          .filterDate("2023-06-01", "2023-11-30")
     )
-    return col.map(lambda i: i.normalizedDifference(["SR_B5","SR_B4"]).rename("NDVI")).median()
+    return col.map(lambda i: i.normalizedDifference(["SR_B5", "SR_B4"]).rename("NDVI")).median()
 
 @st.cache_data
 def get_slope():
@@ -61,9 +64,9 @@ def get_slope():
 
 @st.cache_data
 def get_mask():
-    ndvi  = get_ndvi()
+    ndvi = get_ndvi()
     slope = get_slope()
-    mask  = ndvi.lt(0.2).And(slope.gt(15))
+    mask = ndvi.lt(0.2).And(slope.gt(15))
     return mask.updateMask(mask)
 
 @st.cache_data
@@ -71,9 +74,9 @@ def get_scars():
     return (
         ee.ImageCollection("COPERNICUS/S2")
           .filterBounds(region)
-          .filterDate("2023-01-01","2023-12-31")
+          .filterDate("2023-01-01", "2023-12-31")
           .median()
-          .normalizedDifference(["B8","B4"])
+          .normalizedDifference(["B8", "B4"])
           .rename("LandslideScars")
     )
 
@@ -83,13 +86,13 @@ def get_points():
         get_mask()
         .addBands(ee.Image.pixelLonLat())
         .sample(region=region, scale=500, dropNulls=True)
-        .select(["latitude","longitude"])
+        .select(["latitude", "longitude"])
         .limit(500)
     )
     feats = fc.getInfo()["features"]
     return pd.DataFrame(
         [(f["properties"]["latitude"], f["properties"]["longitude"]) for f in feats],
-        columns=["Latitude","Longitude"]
+        columns=["Latitude", "Longitude"]
     )
 
 @st.cache_data
@@ -102,14 +105,14 @@ def get_hillshade():
     return ee.Terrain.hillshade(ee.Image("USGS/SRTMGL1_003"))
 
 # -----------------------------------------
-# 5) Visualization params
+# 5) Visualization parameters
 # -----------------------------------------
 vis = {
-    "NDVI":      {"min":0,"max":1,"palette":["white","green"]},
-    "Slope":     {"min":0,"max":60},
-    "Mask":      {"palette":["#ff000080"]},  # red @50% opacity
-    "Scars":     {"min":0,"max":1,"palette":["brown"]},
-    "Hillshade": {"min":0,"max":255}
+    "NDVI":      {"min": 0,   "max": 1,   "palette": ["white", "green"]},
+    "Slope":     {"min": 0,   "max": 60},
+    "Mask":      {"palette": ["#ff000080"]},    # red @50% opacity
+    "Scars":     {"min": 0,   "max": 1,   "palette": ["brown"]},
+    "Hillshade": {"min": 0,   "max": 255}        # grayscale relief
 }
 
 # -----------------------------------------
@@ -131,14 +134,14 @@ if st.sidebar.button("🔄 Refresh Data"):
     st.experimental_rerun()
 
 # -----------------------------------------
-# 7) Tabs: Folium + optional Geemap
+# 7) Create Tabs: Folium + (optional) Geemap
 # -----------------------------------------
 tabs = ["Folium Map"] + (["Geemap Map"] if HAVE_GEEMAP else [])
 tab1, *rest = st.tabs(tabs)
 
-# --- Tab 1: Folium Map ---
+# ---- Tab 1: Folium Map ----
 with tab1:
-    m = folium.Map(location=[10.27,77.49], zoom_start=12, tiles=None)
+    m = folium.Map(location=[10.27, 77.49], zoom_start=12, tiles=None)
 
     # Base layers
     folium.TileLayer("OpenStreetMap", name="OSM", attr="© OpenStreetMap contributors").add_to(m)
@@ -161,7 +164,7 @@ with tab1:
             opacity=opacity
         ).add_to(m_)
 
-    # EE overlays
+    # Add overlays in order
     if show_hillshade:
         add_ee(m, get_hillshade(), vis["Hillshade"], "Hillshade", opacity=0.5)
     if show_ndvi:
@@ -177,23 +180,25 @@ with tab1:
     if show_points:
         df = get_points()
         for _, r in df.iterrows():
-            folium.CircleMarker([r.Latitude, r.Longitude],
-                                radius=4, color="blue", fill=True).add_to(m)
+            folium.CircleMarker(
+                [r.Latitude, r.Longitude],
+                radius=4, color="blue", fill=True
+            ).add_to(m)
 
     folium.LayerControl().add_to(m)
     st_folium(m, width=700, height=600)
 
-# --- Tab 2: Geemap Map (if available) ---
+# ---- Tab 2: Geemap Map (if available) ----
 if HAVE_GEEMAP:
     with rest[0]:
-        gm = geemap.Map(
-            center=[10.27,77.49],
+        gm = GeemapMap(
+            center=[10.27, 77.49],
             zoom=12,
             add_google_map=False,
             plugin_Draw=True
         )
         # Basemap picker
-        for bm in ["ROADMAP","SATELLITE","TERRAIN","HYBRID","Esri.WorldImagery","Stamen.Terrain"]:
+        for bm in ["ROADMAP", "SATELLITE", "TERRAIN", "HYBRID", "Esri.WorldImagery", "Stamen.Terrain"]:
             gm.add_basemap(bm)
 
         # EE overlays
@@ -208,21 +213,22 @@ if HAVE_GEEMAP:
         if show_scars:
             gm.addLayer(get_scars(), vis["Scars"], "Landslide Scars", shown=True)
 
-        # Points
+        # Points layer
         if show_points:
-            pts = get_points().rename(columns={"Longitude":"lon","Latitude":"lat"})
+            pts = get_points().rename(columns={"Longitude": "lon", "Latitude": "lat"})
             gm.add_points_from_xy(pts, x="lon", y="lat", layer_name="Prediction Points", color="blue", radius=4)
 
         st.markdown("### Geemap Interactive View")
         gm.to_streamlit(
-            height=650, width=950,
+            height=650,
+            width=950,
             layer_control=True,
             measure_control=True,
             draw_control=True
         )
 
 # -----------------------------------------
-# 8) Bottom: data panel
+# 8) Bottom panel: table or histogram
 # -----------------------------------------
 if show_points and not get_points().empty:
     st.subheader("Predicted Landslide Coordinates")
@@ -237,4 +243,3 @@ elif show_hist:
     st.pyplot(fig)
 else:
     st.write("Toggle 'Prediction Points' or 'NDVI Histogram' to view data.")
-
