@@ -197,9 +197,13 @@ if HAVE_GEEMAP:
             add_google_map=False,
             plugin_Draw=True
         )
-        # Basemap picker
-        for bm in ["ROADMAP", "SATELLITE", "TERRAIN", "HYBRID", "Esri.WorldImagery", "Stamen.Terrain"]:
-            gm.add_basemap(bm)
+
+        # Basemap picker with try/except per layer
+        for name in ["ROADMAP", "SATELLITE", "TERRAIN", "HYBRID", "Esri.WorldImagery", "Stamen.Terrain"]:
+            try:
+                gm.add_basemap(name)
+            except Exception as e:
+                st.sidebar.warning(f"Skipping basemap '{name}': {e}")
 
         # EE overlays
         if show_hillshade:
