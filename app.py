@@ -68,6 +68,17 @@ def get_mask():
     return mask.updateMask(mask)
 
 @st.cache_data(show_spinner=False)
+def get_landslide_scars():
+    # This is an illustrative placeholder; update with your Earth Engine asset if available
+    scars = ee.ImageCollection('COPERNICUS/S2') \
+        .filterBounds(region) \
+        .filterDate('2023-01-01', '2023-12-31') \
+        .median() \
+        .normalizedDifference(['B8', 'B4']) \
+        .rename('LandslideScars')
+    return scars
+
+@st.cache_data(show_spinner=False)
 def get_points():
     mask_img = get_mask()
     pts = (
@@ -98,6 +109,7 @@ show_ndvi = st.sidebar.checkbox("NDVI", value=False)
 show_slope = st.sidebar.checkbox("Slope", value=False)
 show_mask = st.sidebar.checkbox("Landslide Mask", value=True)
 show_points = st.sidebar.checkbox("Prediction Points", value=False)
+show_scars = st.sidebar.checkbox("Landslide Scars (Satellite)", value=True)
 show_hist = st.sidebar.checkbox("NDVI Histogram", value=True)
 if st.sidebar.button("🔄 Refresh Data"):
     get_ndvi.clear()
@@ -105,6 +117,7 @@ if st.sidebar.button("🔄 Refresh Data"):
     get_mask.clear()
     get_points.clear()
     get_ndvi_histogram.clear()
+    get_landslide_scars.clear()
     st.experimental_rerun()
 
 # -----------------------------------------
@@ -113,7 +126,8 @@ if st.sidebar.button("🔄 Refresh Data"):
 vis_params = {
     'NDVI': {'min': 0, 'max': 1, 'palette': ['white', 'green']},
     'Slope': {'min': 0, 'max': 60},
-    'Mask': {'palette': ['red']}
+    'Mask': {'palette': ['red']},
+    'Scars': {'min': 0, 'max': 1, 'palette': ['brown']}
 }
 
 # -----------------------------------------
@@ -138,6 +152,8 @@ if show_slope:
     add_ee_layer(m, get_slope(), vis_params['Slope'], 'Slope')
 if show_mask:
     add_ee_layer(m, get_mask(), vis_params['Mask'], 'Landslide Mask')
+if show_scars:
+    add_ee_layer(m, get_landslide_scars(), vis_params['Scars'], 'Landslide Scars')
 
 points_df = None
 if show_points:
