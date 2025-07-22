@@ -8,6 +8,7 @@ import folium
 from streamlit_folium import st_folium
 import rasterio
 from urllib import request
+import matplotlib.pyplot as plt
 
 # -----------------------------------------
 # Page configuration
@@ -19,30 +20,17 @@ st.set_page_config(
 st.title("📍 Kodaikanal Landslide Prediction Dashboard")
 
 # -----------------------------------------
-# Earth Engine Authentication
+# Earth Engine Authentication (Colab Drive)
 # -----------------------------------------
-# Option A: Load from Streamlit secrets (for deployed apps)
-sa_info = st.secrets.get("EE_CREDENTIALS_JSON", None)
-
-# Option B: Load from a JSON key file in Google Drive (for Colab)
-# Uncomment and adjust the path below if using Colab Drive:
-# drive_key_path = "/content/drive/MyDrive/landslide-demo-466508-922dd630cf91.json"
-# sa_info = json.load(open(drive_key_path))
-
-if sa_info is None:
-    st.error("❌ Earth Engine credentials not provided. Set EE_CREDENTIALS_JSON in secrets or enable Option B.")
+drive_key_path = "/content/drive/MyDrive/landslide-demo-466508-922dd630cf91.json"
+if not os.path.exists(drive_key_path):
+    st.error(f"❌ EE key not found at {drive_key_path}. Please check the path.")
     st.stop()
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = drive_key_path
 
-# Write service account JSON to a temporary file
-key_path = "/tmp/ee_key.json"
-with open(key_path, "w") as f:
-    json.dump(dict(sa_info), f)
-
-# Point Google libraries at the key file
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = key_path
-
-# Initialize Earth Engine
-credentials = ServiceAccountCredentials(sa_info["client_email"], key_path)
+with open(drive_key_path) as f:
+    sa_info = json.load(f)
+credentials = ServiceAccountCredentials(sa_info["client_email"], drive_key_path)
 ee.Initialize(credentials, project=sa_info["project_id"])
 
 # -----------------------------------------
@@ -73,7 +61,6 @@ def get_slope():
 def get_mask():
     ndvi = get_ndvi()
     slope = get_slope()
-    # Example mask logic: low NDVI AND steep slope
     mask = ndvi.lt(0.2).And(slope.gt(15))
     return mask.updateMask(mask)
 
@@ -90,6 +77,16 @@ def get_points():
     coords = [(f['properties']['latitude'], f['properties']['longitude']) for f in features]
     return pd.DataFrame(coords, columns=['Latitude', 'Longitude'])
 
+@st.cache_data(show_spinner=False)
+def get_ndvi_histogram():
+    samples = (
+        get_ndvi()
+        .sample(region=region, scale=500, numPixels=1000)
+        .getInfo()['features']
+    )
+    values = [f['properties']['NDVI'] for f in samples if 'NDVI' in f['properties']]
+    return values
+
 # -----------------------------------------
 # Sidebar controls
 # -----------------------------------------
@@ -98,11 +95,13 @@ show_ndvi = st.sidebar.checkbox("NDVI", value=False)
 show_slope = st.sidebar.checkbox("Slope", value=False)
 show_mask = st.sidebar.checkbox("Landslide Mask", value=True)
 show_points = st.sidebar.checkbox("Prediction Points", value=False)
+show_hist = st.sidebar.checkbox("NDVI Histogram", value=True)
 if st.sidebar.button("🔄 Refresh Data"):
     get_ndvi.clear()
     get_slope.clear()
     get_mask.clear()
     get_points.clear()
+    get_ndvi_histogram.clear()
     st.experimental_rerun()
 
 # -----------------------------------------
@@ -120,8 +119,6 @@ vis_params = {
 m = folium.Map(location=[10.27, 77.49], zoom_start=12)
 folium.TileLayer("Stamen Terrain", name="Base Map").add_to(m)
 
-# Helper to add EE layers
-
 def add_ee_layer(m, ee_image, vis, name):
     map_id = ee_image.getMapId(vis)
     folium.TileLayer(
@@ -132,7 +129,6 @@ def add_ee_layer(m, ee_image, vis, name):
         control=True
     ).add_to(m)
 
-# Conditional layer adding
 if show_ndvi:
     add_ee_layer(m, get_ndvi(), vis_params['NDVI'], 'NDVI')
 if show_slope:
@@ -140,7 +136,6 @@ if show_slope:
 if show_mask:
     add_ee_layer(m, get_mask(), vis_params['Mask'], 'Landslide Mask')
 
-# Prediction points
 points_df = None
 if show_points:
     points_df = get_points()
@@ -152,12 +147,8 @@ if show_points:
             fill=True
         ).add_to(m)
 
-# Layer Control UI
 folium.LayerControl().add_to(m)
 
-# -----------------------------------------
-# Layout: Map + DataFrame
-# -----------------------------------------
 col1, col2 = st.columns((3, 1))
 with col1:
     st_folium(m, width=700, height=600)
@@ -165,5 +156,14 @@ with col2:
     if points_df is not None and not points_df.empty:
         st.subheader("Predicted Landslide Coordinates")
         st.dataframe(points_df)
+    elif show_hist:
+        st.subheader("NDVI Value Distribution")
+        ndvi_vals = get_ndvi_histogram()
+        fig, ax = plt.subplots()
+        ax.hist(ndvi_vals, bins=30, color='green')
+        ax.set_title("NDVI Histogram")
+        ax.set_xlabel("NDVI")
+        ax.set_ylabel("Frequency")
+        st.pyplot(fig)
     else:
-        st.write("Toggle 'Prediction Points' to view coordinates.")
+        st.write("Toggle 'Prediction Points' or 'NDVI Histogram' to view data.")
