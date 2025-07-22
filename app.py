@@ -1,4 +1,5 @@
-import os, json, io, zipfile
+import os
+import json
 import ee
 from ee import ServiceAccountCredentials
 import streamlit as st
@@ -6,8 +7,6 @@ import numpy as np
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import rasterio
-from urllib import request
 import matplotlib.pyplot as plt
 
 # -----------------------------------------
@@ -69,13 +68,15 @@ def get_mask():
 
 @st.cache_data(show_spinner=False)
 def get_landslide_scars():
-    # This is an illustrative placeholder; update with your Earth Engine asset if available
-    scars = ee.ImageCollection('COPERNICUS/S2') \
-        .filterBounds(region) \
-        .filterDate('2023-01-01', '2023-12-31') \
-        .median() \
-        .normalizedDifference(['B8', 'B4']) \
+    # Placeholder; replace with your own assets if you have them
+    scars = (
+        ee.ImageCollection('COPERNICUS/S2')
+        .filterBounds(region)
+        .filterDate('2023-01-01', '2023-12-31')
+        .median()
+        .normalizedDifference(['B8', 'B4'])
         .rename('LandslideScars')
+    )
     return scars
 
 @st.cache_data(show_spinner=False)
@@ -101,16 +102,35 @@ def get_ndvi_histogram():
     values = [f['properties']['NDVI'] for f in samples if 'NDVI' in f['properties']]
     return values
 
+# New: hillshade function
+@st.cache_data(show_spinner=False)
+def get_hillshade():
+    dem = ee.Image('USGS/SRTMGL1_003')
+    return ee.Terrain.hillshade(dem)
+
+# -----------------------------------------
+# Visualization parameters
+# -----------------------------------------
+vis_params = {
+    'NDVI':      {'min': 0,   'max': 1,   'palette': ['white', 'green']},
+    'Slope':     {'min': 0,   'max': 60},
+    'Mask':      {'palette': ['red']},
+    'Scars':     {'min': 0,   'max': 1,   'palette': ['brown']},
+    'Hillshade': {'min': 0,   'max': 255}       # new hillshade
+}
+
 # -----------------------------------------
 # Sidebar controls
 # -----------------------------------------
 st.sidebar.header("Map Layers & Options")
-show_ndvi = st.sidebar.checkbox("NDVI", value=False)
-show_slope = st.sidebar.checkbox("Slope", value=False)
-show_mask = st.sidebar.checkbox("Landslide Mask", value=True)
-show_points = st.sidebar.checkbox("Prediction Points", value=False)
-show_scars = st.sidebar.checkbox("Landslide Scars (Satellite)", value=True)
-show_hist = st.sidebar.checkbox("NDVI Histogram", value=True)
+show_ndvi       = st.sidebar.checkbox("NDVI", value=False)
+show_slope      = st.sidebar.checkbox("Slope", value=False)
+show_mask       = st.sidebar.checkbox("Landslide Mask", value=True)
+show_points     = st.sidebar.checkbox("Prediction Points", value=False)
+show_scars      = st.sidebar.checkbox("Landslide Scars (Satellite)", value=True)
+show_hillshade  = st.sidebar.checkbox("Hillshade (Relief)", value=False)  # new toggle
+show_hist       = st.sidebar.checkbox("NDVI Histogram", value=True)
+
 if st.sidebar.button("🔄 Refresh Data"):
     get_ndvi.clear()
     get_slope.clear()
@@ -118,17 +138,8 @@ if st.sidebar.button("🔄 Refresh Data"):
     get_points.clear()
     get_ndvi_histogram.clear()
     get_landslide_scars.clear()
+    get_hillshade.clear()
     st.experimental_rerun()
-
-# -----------------------------------------
-# Visualization parameters
-# -----------------------------------------
-vis_params = {
-    'NDVI': {'min': 0, 'max': 1, 'palette': ['white', 'green']},
-    'Slope': {'min': 0, 'max': 60},
-    'Mask': {'palette': ['red']},
-    'Scars': {'min': 0, 'max': 1, 'palette': ['brown']}
-}
 
 # -----------------------------------------
 # Initialize Folium map
@@ -146,6 +157,9 @@ def add_ee_layer(m, ee_image, vis, name):
         control=True
     ).add_to(m)
 
+# add layers in order
+if show_hillshade:  # put hillshade below the others
+    add_ee_layer(m, get_hillshade(), vis_params['Hillshade'], 'Hillshade')
 if show_ndvi:
     add_ee_layer(m, get_ndvi(), vis_params['NDVI'], 'NDVI')
 if show_slope:
@@ -168,9 +182,13 @@ if show_points:
 
 folium.LayerControl().add_to(m)
 
+# -----------------------------------------
+# Layout: map + data panel
+# -----------------------------------------
 col1, col2 = st.columns((3, 1))
 with col1:
     st_folium(m, width=700, height=600)
+
 with col2:
     if points_df is not None and not points_df.empty:
         st.subheader("Predicted Landslide Coordinates")
