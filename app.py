@@ -31,7 +31,7 @@ st.write("Click to fetch and display the latest precomputed landslide mask:")
 if st.button("Fetch & Display Mask"):
     st.info("Generating download URL from Earth Engine…")
 
-    # Load the published mask asset from your project asset root
+    # Load the published mask asset
     mask_ee = ee.Image("projects/landslide-demo-466508/assets/mask_kodaikanal")
 
     # Serialize region to JSON
@@ -49,14 +49,35 @@ if st.button("Fetch & Display Mask"):
         st.error(f"❌ Failed to get download URL: {e}")
         st.stop()
 
-    # Download and load the GeoTIFF
+    # Download the GeoTIFF to a temp file
     st.info("Downloading mask…")
-    resp = request.urlopen(url)
-    with open("/tmp/mask.tif", "wb") as f:
-        f.write(resp.read())
+    try:
+        resp = request.urlopen(url)
+    except Exception as e:
+        st.error(f"❌ HTTP error downloading mask: {e}")
+        st.stop()
 
-    with rasterio.open("/tmp/mask.tif") as src:
-        mask_arr = src.read(1)
+    tmp_path = "/tmp/mask.tif"
+    with open(tmp_path, "wb") as f:
+        data = resp.read()
+        if not data:
+            st.error("❌ Download returned empty data.")
+            st.stop()
+        f.write(data)
+
+    # Verify file size
+    file_size = os.path.getsize(tmp_path)
+    if file_size < 100:
+        st.error(f"❌ Downloaded file too small ({file_size} bytes). Check your asset or region.")
+        st.stop()
+
+    # Read the mask into numpy
+    try:
+        with rasterio.open(tmp_path) as src:
+            mask_arr = src.read(1)
+    except Exception as e:
+        st.error(f"❌ Failed to open GeoTIFF: {e}")
+        st.stop()
 
     # Display with Folium
     m = folium.Map(location=[10.27, 77.49], zoom_start=12)
@@ -68,3 +89,4 @@ if st.button("Fetch & Display Mask"):
         name="Landslide Mask"
     ).add_to(m)
     st_folium(m, width=700, height=500)
+
