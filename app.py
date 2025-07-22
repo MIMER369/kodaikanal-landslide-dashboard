@@ -9,8 +9,13 @@ import folium
 from streamlit_folium import st_folium
 import matplotlib.pyplot as plt
 
-# geemap for the second tab
-import geemap.foliumap as geemap
+# Try to import geemap (without hard dependency on foliumap submodule)
+try:
+    import geemap
+    HAVE_GEEMAP = True
+except ImportError:
+    HAVE_GEEMAP = False
+    st.sidebar.warning("⚠️ geemap not found — Geemap tab will be hidden. Add `geemap>=0.23` to requirements.txt to re‑enable.")
 
 # -----------------------------------------
 # 1) Page config & Title
@@ -126,9 +131,10 @@ if st.sidebar.button("🔄 Refresh Data"):
     st.experimental_rerun()
 
 # -----------------------------------------
-# 7) Create two tabs: Folium & Geemap
+# 7) Tabs: Folium + optional Geemap
 # -----------------------------------------
-tab1, tab2 = st.tabs(["Folium Map", "Geemap Map"])
+tabs = ["Folium Map"] + (["Geemap Map"] if HAVE_GEEMAP else [])
+tab1, *rest = st.tabs(tabs)
 
 # --- Tab 1: Folium Map ---
 with tab1:
@@ -177,48 +183,46 @@ with tab1:
     folium.LayerControl().add_to(m)
     st_folium(m, width=700, height=600)
 
-# --- Tab 2: Geemap Map ---
-with tab2:
-    gm = geemap.Map(
-        center=[10.27,77.49],
-        zoom=12,
-        add_google_map=False,
-        plugin_Draw=True
-    )
-    # Basemap picker
-    for bm in ["ROADMAP","SATELLITE","TERRAIN","HYBRID",
-               "Esri.WorldImagery","Stamen.Terrain"]:
-        gm.add_basemap(bm)
+# --- Tab 2: Geemap Map (if available) ---
+if HAVE_GEEMAP:
+    with rest[0]:
+        gm = geemap.Map(
+            center=[10.27,77.49],
+            zoom=12,
+            add_google_map=False,
+            plugin_Draw=True
+        )
+        # Basemap picker
+        for bm in ["ROADMAP","SATELLITE","TERRAIN","HYBRID","Esri.WorldImagery","Stamen.Terrain"]:
+            gm.add_basemap(bm)
 
-    # EE overlays
-    if show_hillshade:
-        gm.addLayer(get_hillshade(), vis["Hillshade"], "Hillshade", shown=False, opacity=0.5)
-    if show_ndvi:
-        gm.addLayer(get_ndvi(), vis["NDVI"], "NDVI", shown=False)
-    if show_slope:
-        gm.addLayer(get_slope(), vis["Slope"], "Slope", shown=False)
-    if show_mask:
-        gm.addLayer(get_mask(), vis["Mask"], "Landslide Mask", shown=True)
-    if show_scars:
-        gm.addLayer(get_scars(), vis["Scars"], "Landslide Scars", shown=True)
+        # EE overlays
+        if show_hillshade:
+            gm.addLayer(get_hillshade(), vis["Hillshade"], "Hillshade", shown=False, opacity=0.5)
+        if show_ndvi:
+            gm.addLayer(get_ndvi(), vis["NDVI"], "NDVI", shown=False)
+        if show_slope:
+            gm.addLayer(get_slope(), vis["Slope"], "Slope", shown=False)
+        if show_mask:
+            gm.addLayer(get_mask(), vis["Mask"], "Landslide Mask", shown=True)
+        if show_scars:
+            gm.addLayer(get_scars(), vis["Scars"], "Landslide Scars", shown=True)
 
-    if show_points:
-        pts = get_points().rename(columns={"Longitude":"lon","Latitude":"lat"})
-        gm.add_points_from_xy(pts, x="lon", y="lat",
-                              layer_name="Prediction Points",
-                              color="blue", radius=4)
+        # Points
+        if show_points:
+            pts = get_points().rename(columns={"Longitude":"lon","Latitude":"lat"})
+            gm.add_points_from_xy(pts, x="lon", y="lat", layer_name="Prediction Points", color="blue", radius=4)
 
-    st.markdown("### Geemap Interactive View")
-    gm.to_streamlit(
-        height=650,
-        width=950,
-        layer_control=True,
-        measure_control=True,
-        draw_control=True
-    )
+        st.markdown("### Geemap Interactive View")
+        gm.to_streamlit(
+            height=650, width=950,
+            layer_control=True,
+            measure_control=True,
+            draw_control=True
+        )
 
 # -----------------------------------------
-# 8) Bottom panel: table or histogram
+# 8) Bottom: data panel
 # -----------------------------------------
 if show_points and not get_points().empty:
     st.subheader("Predicted Landslide Coordinates")
@@ -233,3 +237,4 @@ elif show_hist:
     st.pyplot(fig)
 else:
     st.write("Toggle 'Prediction Points' or 'NDVI Histogram' to view data.")
+
